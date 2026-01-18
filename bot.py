@@ -1250,6 +1250,7 @@ async def admin_stats_api(request):
     """API endpoint для получения общей статистики (только для owner)"""
     user_id = request.query.get('user_id')
     if not user_id:
+        logger.warning("admin_stats_api: user_id not provided")
         return web.json_response(
             {'error': 'user_id required'}, 
             status=400,
@@ -1259,6 +1260,7 @@ async def admin_stats_api(request):
     try:
         user_id = int(user_id)
     except ValueError:
+        logger.warning(f"admin_stats_api: invalid user_id: {user_id}")
         return web.json_response(
             {'error': 'invalid user_id'}, 
             status=400,
@@ -1266,12 +1268,23 @@ async def admin_stats_api(request):
         )
     
     # Проверяем права доступа
-    if not OWNER_ID or user_id != OWNER_ID:
+    if not OWNER_ID:
+        logger.warning(f"admin_stats_api: OWNER_ID not set. Request from user_id: {user_id}")
         return web.json_response(
-            {'error': 'Access denied'}, 
+            {'error': 'OWNER_ID not configured. Please set OWNER_ID environment variable in bot settings.'}, 
             status=403,
             headers={'Access-Control-Allow-Origin': '*'}
         )
+    
+    if user_id != OWNER_ID:
+        logger.warning(f"admin_stats_api: Access denied. Request from user_id: {user_id}, OWNER_ID: {OWNER_ID}")
+        return web.json_response(
+            {'error': 'Access denied. Only owner can access admin panel.'}, 
+            status=403,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    logger.info(f"admin_stats_api: Access granted for user_id: {user_id}")
     
     # Подсчитываем статистику
     total_users = len(set(list(eggs_hatched_by_user.keys()) + list(user_eggs_hatched_by_others.keys()) + list(eggs_sent_by_user.keys()) + list(egg_points.keys())))
@@ -1358,12 +1371,23 @@ async def admin_tasks_api(request):
         )
     
     # Проверяем права доступа
-    if not OWNER_ID or user_id != OWNER_ID:
+    if not OWNER_ID:
+        logger.warning(f"admin_tasks_api: OWNER_ID not set. Request from user_id: {user_id}")
         return web.json_response(
-            {'error': 'Access denied'}, 
+            {'error': 'OWNER_ID not configured. Please set OWNER_ID environment variable in bot settings.'}, 
             status=403,
             headers={'Access-Control-Allow-Origin': '*'}
         )
+    
+    if user_id != OWNER_ID:
+        logger.warning(f"admin_tasks_api: Access denied. Request from user_id: {user_id}, OWNER_ID: {OWNER_ID}")
+        return web.json_response(
+            {'error': 'Access denied. Only owner can access admin panel.'}, 
+            status=403,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    logger.info(f"admin_tasks_api: Access granted for user_id: {user_id}")
     
     if request.method == 'GET':
         return web.json_response(
