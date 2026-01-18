@@ -653,14 +653,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # РЕФЕРАЛЬНАЯ СИСТЕМА: Если clicker_id еще не имеет реферала, устанавливаем sender_id как его реферала
     # Когда кто-то открывает яйцо, он становится рефералом того, кто отправил яйцо
+    # ВАЖНО: Для multi egg реферал устанавливается только при первом вылуплении
     if clicker_id not in referrers and sender_id != clicker_id:
         referrers[clicker_id] = sender_id
         logger.info(f"User {clicker_id} became referral of {sender_id} (total referrers now: {len(referrers)})")
     
     # Обновляем статистику
-    # Увеличиваем счетчик для того, кто вылупил
+    # Увеличиваем счетчик для того, кто вылупил (для каждого вылупления, включая multi egg)
     eggs_hatched_by_user[clicker_id] = eggs_hatched_by_user.get(clicker_id, 0) + 1
-    # Увеличиваем счетчик для отправителя (его яйцо вылупили)
+    # Увеличиваем счетчик для отправителя (его яйцо вылупили) - для каждого вылупления multi egg
     user_eggs_hatched_by_others[sender_id] = user_eggs_hatched_by_others.get(sender_id, 0) + 1
     
     # Начисляем поинты Egg
