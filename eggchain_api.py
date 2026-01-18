@@ -147,18 +147,44 @@ async def get_egg_by_id(request):
         hatched_by = egg_info.get('hatched_by')
         timestamp_sent = egg_info.get('timestamp_sent')
         timestamp_hatched = egg_info.get('timestamp_hatched')
+        is_multi = egg_info.get('is_multi', False)
+        max_hatches = egg_info.get('max_hatches', 1)
+        hatched_count = egg_info.get('hatched_count', 0)
+        hatched_by_list = egg_info.get('hatched_by_list', [])
+        
+        # Для multi eggs проверяем multi_eggs
+        multi_eggs = data.get('multi_eggs', {})
+        if is_multi and egg_key in multi_eggs:
+            multi_egg_data = multi_eggs[egg_key]
+            hatched_by_list = multi_egg_data.get('hatched_by_list', [])
+            hatched_count = multi_egg_data.get('hatched_count', 0)
         
         # Проверяем, вылуплено ли яйцо
-        is_hatched = egg_key in hatched_eggs if egg_key else False
+        # Для multi eggs считаем вылупленным, если хотя бы 1 пользователь вылупил
+        if is_multi:
+            is_hatched = hatched_count > 0
+        else:
+            is_hatched = egg_key in hatched_eggs if egg_key else False
         
         # Если вылуплено, но hatched_by не указан, пытаемся найти из других источников
-        if is_hatched and not hatched_by:
+        if is_hatched and not hatched_by and not is_multi:
             # Можно попробовать найти из других данных, но для простоты оставляем None
             pass
         
         # Получаем информацию о пользователях
         sender_username, sender_avatar_file, sender_avatar_url = await get_user_info(sender_id) if sender_id else (None, None, None)
         hatched_by_username, hatched_by_avatar_file, hatched_by_avatar_url = await get_user_info(hatched_by) if hatched_by else (None, None, None)
+        
+        # Получаем информацию о всех вылупивших для multi eggs
+        hatched_by_users = []
+        if is_multi and hatched_by_list:
+            for user_id in hatched_by_list:
+                username, avatar_file, avatar_url = await get_user_info(user_id)
+                hatched_by_users.append({
+                    'user_id': user_id,
+                    'username': username,
+                    'avatar': avatar_url
+                })
         
         result = {
             'egg_id': egg_id,
@@ -171,7 +197,12 @@ async def get_egg_by_id(request):
             'hatched_by_avatar': hatched_by_avatar_url,
             'timestamp_sent': timestamp_sent,
             'timestamp_hatched': timestamp_hatched,
-            'status': 'hatched' if is_hatched else 'pending'
+            'status': 'hatched' if is_hatched else 'pending',
+            'is_multi': is_multi,
+            'max_hatches': max_hatches,
+            'hatched_count': hatched_count,
+            'hatched_by_list': hatched_by_list,
+            'hatched_by_users': hatched_by_users  # Список пользователей с username и avatar
         }
         
         response = web.json_response(result)
