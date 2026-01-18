@@ -15,6 +15,7 @@ import uuid
 from aiohttp import web
 import json
 import os
+import re
 from datetime import datetime, date
 import aiohttp
 from eggchain_api import setup_eggchain_routes, set_bot_instance
@@ -1319,6 +1320,137 @@ async def admin_stats_api(request):
     )
 
 
+async def check_task_subscription_api(request):
+    """API endpoint для проверки подписки на канал/чат/бота из задачи"""
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return web.Response(
+            status=200,
+            headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Accept',
+                'Access-Control-Max-Age': '3600'
+            }
+        )
+    
+    user_id = request.query.get('user_id')
+    task_id = request.query.get('task_id')
+    
+    if not user_id:
+        return web.json_response(
+            {'error': 'user_id required'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    if not task_id:
+        return web.json_response(
+            {'error': 'task_id required'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        return web.json_response(
+            {'error': 'invalid user_id'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    try:
+        data = await request.json()
+        link = data.get('link', '')
+        
+        if not link:
+            return web.json_response(
+                {'error': 'link required'}, 
+                status=400,
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+        
+        # Извлекаем username или chat_id из ссылки
+        # Форматы: https://t.me/username, t.me/username, @username
+        match = re.search(r'(?:t\.me/|@)([a-zA-Z0-9_]+)', link)
+        if not match:
+            return web.json_response(
+                {'error': 'Invalid link format'}, 
+                status=400,
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+        
+        chat_identifier = match.group(1)
+        
+        # Проверяем, выполнена ли уже эта задача
+        task_key = f'task_{task_id}'
+        if completed_tasks.get(user_id, {}).get(task_key, False):
+            return web.json_response(
+                {'subscribed': True},
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+        
+        # Проверяем подписку через Telegram Bot API
+        subscribed = False
+        if bot_application:
+            try:
+                # Пробуем получить информацию о чате
+                chat_member = await bot_application.bot.get_chat_member(
+                    chat_id=f'@{chat_identifier}',
+                    user_id=user_id
+                )
+                
+                # Проверяем, что пользователь подписан
+                if chat_member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                    subscribed = True
+                    
+                    # Находим задачу и начисляем награду
+                    task = None
+                    for t in admin_tasks:
+                        if t.get('id') == task_id:
+                            task = t
+                            break
+                    
+                    if task:
+                        reward = task.get('reward', 0)
+                        if reward > 0:
+                            # Начисляем Eggs
+                            today = date.today().isoformat()
+                            user_data = daily_eggs_sent.get(user_id, {})
+                            if user_data.get('date') != today:
+                                old_paid_eggs = daily_eggs_sent.get(user_id, {}).get('paid_eggs', 0)
+                                daily_eggs_sent[user_id] = {'date': today, 'count': 0, 'paid_eggs': old_paid_eggs}
+                                user_data = daily_eggs_sent[user_id]
+                            user_data['paid_eggs'] = user_data.get('paid_eggs', 0) + reward
+                        
+                        # Отмечаем задание как выполненное
+                        if user_id not in completed_tasks:
+                            completed_tasks[user_id] = {}
+                        completed_tasks[user_id][task_key] = True
+                        
+                        # Сохраняем данные
+                        save_data()
+                        
+                        logger.info(f"User {user_id} completed task {task_id}, earned {reward} Eggs")
+            except Exception as e:
+                logger.error(f"Error checking chat member for {chat_identifier}: {e}")
+                # Если не удалось проверить (например, бот не в чате или приватный канал), возвращаем False
+                subscribed = False
+        
+        return web.json_response(
+            {'subscribed': subscribed},
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    except Exception as e:
+        logger.error(f"Error checking task subscription: {e}", exc_info=True)
+        return web.json_response(
+            {'error': str(e)}, 
+            status=500,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+
+
 async def public_tasks_api(request):
     """API endpoint для получения списка Tasks для пользователей"""
     # Handle CORS preflight
@@ -1500,6 +1632,9 @@ def main():
             app.router.add_get('/api/tasks', public_tasks_api)
             # Добавляем роуты для Eggchain Explorer
             setup_eggchain_routes(app)
+            # Task subscription check endpoint
+            app.router.add_post('/api/tasks/check_subscription', check_task_subscription_api)
+            app.router.add_options('/api/tasks/check_subscription', check_task_subscription_api)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
