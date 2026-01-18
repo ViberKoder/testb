@@ -45,7 +45,18 @@ async def get_user_info(user_id):
         return None, None, None
 
 # Путь к файлу данных (должен совпадать с bot.py)
-DATA_FILE = os.getenv('DATA_FILE', 'bot_data.json')
+# Используем ту же логику, что и в bot.py
+DATA_FILE_PATH = os.environ.get('DATA_FILE_PATH')
+if DATA_FILE_PATH:
+    DATA_FILE = DATA_FILE_PATH
+else:
+    # Пробуем использовать /data для постоянного хранения (если доступно)
+    data_dir = '/data'
+    if os.path.exists(data_dir) and os.access(data_dir, os.R_OK):
+        DATA_FILE = os.path.join(data_dir, "bot_data.json")
+    else:
+        # Fallback на рабочую директорию
+        DATA_FILE = os.path.join(os.getcwd(), "bot_data.json")
 
 def load_data():
     """Загружает данные из JSON файла"""
@@ -241,13 +252,32 @@ async def get_user_eggs(request):
         eggs_detail = data.get('eggs_detail', {})
         hatched_eggs = set(data.get('hatched_eggs', []))
         
+        # Получаем информацию о multi eggs
+        multi_eggs = data.get('multi_eggs', {})
+        
         # Находим все яйца, отправленные этим пользователем
         user_eggs = []
         for egg_key, egg_info in eggs_detail.items():
             if egg_info.get('sender_id') == user_id:
                 egg_id = egg_info.get('egg_id', egg_key.split('_', 1)[1] if '_' in egg_key else egg_key)
-                is_hatched = egg_key in hatched_eggs
+                is_multi = egg_info.get('is_multi', False)
                 hatched_by = egg_info.get('hatched_by')
+                
+                # Для multi eggs проверяем hatched_count
+                if is_multi:
+                    if egg_key in multi_eggs:
+                        multi_egg_data = multi_eggs[egg_key]
+                        hatched_count = multi_egg_data.get('hatched_count', 0)
+                        is_hatched = hatched_count > 0
+                        # Для multi eggs hatched_by может быть None, но есть hatched_by_list
+                        if not hatched_by and hatched_count > 0:
+                            hatched_by_list = multi_egg_data.get('hatched_by_list', [])
+                            if hatched_by_list:
+                                hatched_by = hatched_by_list[0]  # Берем первого вылупившего для отображения
+                    else:
+                        is_hatched = False
+                else:
+                    is_hatched = egg_key in hatched_eggs
                 
                 # Получаем информацию о том, кто вылупил
                 hatched_by_username, hatched_by_avatar_file, hatched_by_avatar_url = await get_user_info(hatched_by) if hatched_by else (None, None, None)
@@ -261,6 +291,9 @@ async def get_user_eggs(request):
                     'hatched_by_avatar': hatched_by_avatar_url,
                     'timestamp_sent': egg_info.get('timestamp_sent'),
                     'timestamp_hatched': egg_info.get('timestamp_hatched'),
+                    'is_multi': is_multi,
+                    'hatched_count': multi_eggs.get(egg_key, {}).get('hatched_count', 0) if is_multi else None,
+                    'max_hatches': egg_info.get('max_hatches', 1) if is_multi else None
                     'status': 'hatched' if is_hatched else 'pending'
                 })
         

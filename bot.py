@@ -34,8 +34,19 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN environment variable is required!")
 
 # Файл для сохранения данных
-# Используем абсолютный путь для Railway - сохраняем в /tmp или в рабочей директории
-DATA_FILE = os.path.join(os.getcwd(), "bot_data.json")
+# Используем переменную окружения DATA_FILE_PATH если установлена, иначе рабочую директорию
+# На Railway рекомендуется использовать volume для постоянного хранения
+DATA_FILE_PATH = os.environ.get('DATA_FILE_PATH')
+if DATA_FILE_PATH:
+    DATA_FILE = DATA_FILE_PATH
+else:
+    # Пробуем использовать /data для постоянного хранения (если доступно)
+    data_dir = '/data'
+    if os.path.exists(data_dir) and os.access(data_dir, os.W_OK):
+        DATA_FILE = os.path.join(data_dir, "bot_data.json")
+    else:
+        # Fallback на рабочую директорию
+        DATA_FILE = os.path.join(os.getcwd(), "bot_data.json")
 
 # ID канала Hatch Egg
 HATCH_EGG_CHANNEL = "@hatch_egg"
