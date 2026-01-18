@@ -291,10 +291,10 @@ async def get_user_eggs(request):
                     'hatched_by_avatar': hatched_by_avatar_url,
                     'timestamp_sent': egg_info.get('timestamp_sent'),
                     'timestamp_hatched': egg_info.get('timestamp_hatched'),
+                    'status': 'hatched' if is_hatched else 'pending',
                     'is_multi': is_multi,
                     'hatched_count': multi_eggs.get(egg_key, {}).get('hatched_count', 0) if is_multi else None,
                     'max_hatches': egg_info.get('max_hatches', 1) if is_multi else None
-                    'status': 'hatched' if is_hatched else 'pending'
                 })
         
         # Также проверяем hatched_eggs для яиц, которых нет в eggs_detail
