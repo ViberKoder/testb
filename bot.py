@@ -42,6 +42,15 @@ HATCH_EGG_CHANNEL = "@hatch_egg"
 # Username бота для реферальных ссылок (получаем из переменной окружения или используем дефолт)
 BOT_USERNAME = os.environ.get('BOT_USERNAME', 'tohatchbot')
 
+# Owner ID для админ-панели (получаем из переменной окружения)
+OWNER_ID = os.environ.get('OWNER_ID')
+if OWNER_ID:
+    try:
+        OWNER_ID = int(OWNER_ID)
+    except ValueError:
+        OWNER_ID = None
+        logger.warning("OWNER_ID is not a valid integer, admin panel will be disabled")
+
 # Лимиты
 FREE_EGGS_PER_DAY = 10
 EGG_PACK_SIZE = 10  # Количество яиц в пакете
@@ -85,7 +94,8 @@ def load_data():
                     'referral_earnings': data.get('referral_earnings', {}),  # {referrer_id: total_earned} - сколько заработал рефовод
                     'ton_payments': data.get('ton_payments', {}),  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
                     'eggs_detail': data.get('eggs_detail', {}),  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
-                    'multi_eggs': data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
+                    'multi_eggs': data.get('multi_eggs', {}),  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
+                    'admin_tasks': data.get('admin_tasks', [])  # [{id, name, avatar_url, channel, reward, created_at}]
                 }
         except Exception as e:
             logger.error(f"Error loading data from {DATA_FILE}: {e}", exc_info=True)
@@ -109,7 +119,8 @@ def get_default_data():
         'referral_earnings': {},
         'ton_payments': {},
         'eggs_detail': {},
-        'multi_eggs': {}
+        'multi_eggs': {},
+        'admin_tasks': []
     }
 
 # Функция для сохранения данных в файл
@@ -128,7 +139,8 @@ def save_data():
             'referral_earnings': referral_earnings,
             'ton_payments': ton_payments,
             'eggs_detail': eggs_detail,
-            'multi_eggs': multi_eggs
+            'multi_eggs': multi_eggs,
+            'admin_tasks': admin_tasks
         }
         
         # Логируем что сохраняем
@@ -178,6 +190,7 @@ referral_earnings = data.get('referral_earnings', {})  # {referrer_id: total_ear
 ton_payments = data.get('ton_payments', {})  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
 eggs_detail = data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
 multi_eggs = data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
+admin_tasks = data.get('admin_tasks', [])  # [{id, name, avatar_url, channel, reward, created_at}]
 
 # Логируем загруженные данные при старте
 logger.info(f"Bot started with data: {len(egg_points)} users with points, {len(referrers)} referrers, {len(eggs_detail)} eggs in detail")
@@ -1232,6 +1245,190 @@ async def get_payment_info_api(request):
     )
 
 
+# Admin API endpoints
+async def admin_stats_api(request):
+    """API endpoint для получения общей статистики (только для owner)"""
+    user_id = request.query.get('user_id')
+    if not user_id:
+        return web.json_response(
+            {'error': 'user_id required'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        return web.json_response(
+            {'error': 'invalid user_id'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    # Проверяем права доступа
+    if not OWNER_ID or user_id != OWNER_ID:
+        return web.json_response(
+            {'error': 'Access denied'}, 
+            status=403,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    # Подсчитываем статистику
+    total_users = len(set(list(eggs_hatched_by_user.keys()) + list(user_eggs_hatched_by_others.keys()) + list(eggs_sent_by_user.keys()) + list(egg_points.keys())))
+    total_eggs_sent = sum(eggs_sent_by_user.values())
+    total_eggs_hatched = len(hatched_eggs)
+    total_points = sum(egg_points.values())
+    
+    # Подсчитываем активных пользователей за последние 24 часа
+    from datetime import datetime, timedelta
+    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+    active_users = set()
+    for user_id_key, user_data in daily_eggs_sent.items():
+        if user_data.get('date') == date.today().isoformat() or user_data.get('date') == yesterday:
+            active_users.add(user_id_key)
+    
+    # Подсчитываем онлайн пользователей (активные за последний час - упрощенная версия)
+    # В реальности нужно отслеживать последнюю активность, но для простоты используем сегодняшних активных
+    online_users = len([uid for uid, data in daily_eggs_sent.items() if data.get('date') == date.today().isoformat()])
+    
+    return web.json_response(
+        {
+            'total_users': total_users,
+            'online_users': online_users,
+            'active_users_24h': len(active_users),
+            'total_eggs_sent': total_eggs_sent,
+            'total_eggs_hatched': total_eggs_hatched,
+            'total_points': total_points,
+            'total_referrals': len(referrers),
+            'total_tasks': len(admin_tasks)
+        },
+        headers={'Access-Control-Allow-Origin': '*'}
+    )
+
+
+async def public_tasks_api(request):
+    """API endpoint для получения списка Tasks для пользователей"""
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return web.Response(
+            status=200,
+            headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Accept',
+                'Access-Control-Max-Age': '3600'
+            }
+        )
+    
+    return web.json_response(
+        {'tasks': admin_tasks},
+        headers={'Access-Control-Allow-Origin': '*'}
+    )
+
+
+async def admin_tasks_api(request):
+    """API endpoint для получения списка Tasks (только для owner)"""
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return web.Response(
+            status=200,
+            headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Accept',
+                'Access-Control-Max-Age': '3600'
+            }
+        )
+    
+    user_id = request.query.get('user_id')
+    if not user_id:
+        return web.json_response(
+            {'error': 'user_id required'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        return web.json_response(
+            {'error': 'invalid user_id'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    # Проверяем права доступа
+    if not OWNER_ID or user_id != OWNER_ID:
+        return web.json_response(
+            {'error': 'Access denied'}, 
+            status=403,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    if request.method == 'GET':
+        return web.json_response(
+            {'tasks': admin_tasks},
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    elif request.method == 'POST':
+        # Добавление нового Task
+        try:
+            data = await request.json()
+            task_id = str(uuid.uuid4())
+            new_task = {
+                'id': task_id,
+                'name': data.get('name', ''),
+                'avatar_url': data.get('avatar_url', ''),
+                'channel': data.get('channel', ''),
+                'reward': int(data.get('reward', 0)),
+                'created_at': datetime.now().isoformat()
+            }
+            admin_tasks.append(new_task)
+            save_data()
+            return web.json_response(
+                {'success': True, 'task': new_task},
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+        except Exception as e:
+            logger.error(f"Error adding task: {e}", exc_info=True)
+            return web.json_response(
+                {'error': str(e)}, 
+                status=500,
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+    elif request.method == 'DELETE':
+        # Удаление Task
+        try:
+            task_id = request.query.get('task_id')
+            if not task_id:
+                return web.json_response(
+                    {'error': 'task_id required'}, 
+                    status=400,
+                    headers={'Access-Control-Allow-Origin': '*'}
+                )
+            
+            global admin_tasks
+            admin_tasks = [t for t in admin_tasks if t.get('id') != task_id]
+            save_data()
+            return web.json_response(
+                {'success': True},
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+        except Exception as e:
+            logger.error(f"Error deleting task: {e}", exc_info=True)
+            return web.json_response(
+                {'error': str(e)}, 
+                status=500,
+                headers={'Access-Control-Allow-Origin': '*'}
+            )
+    else:
+        return web.json_response(
+            {'error': 'Method not allowed'}, 
+            status=405,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+
+
 def main():
     """Запуск бота"""
     import threading
@@ -1267,6 +1464,14 @@ def main():
             app.router.add_post('/api/ton/verify_payment', verify_ton_payment_api)
             app.router.add_get('/api/ton/payment_info', get_payment_info_api)
             app.router.add_options('/api/ton/verify_payment', verify_ton_payment_api)
+            # Admin API endpoints
+            app.router.add_get('/api/admin/stats', admin_stats_api)
+            app.router.add_get('/api/admin/tasks', admin_tasks_api)
+            app.router.add_post('/api/admin/tasks', admin_tasks_api)
+            app.router.add_delete('/api/admin/tasks', admin_tasks_api)
+            app.router.add_options('/api/admin/tasks', admin_tasks_api)
+            # Public tasks endpoint (for users to see available tasks)
+            app.router.add_get('/api/tasks', public_tasks_api)
             # Добавляем роуты для Eggchain Explorer
             setup_eggchain_routes(app)
             runner = web.AppRunner(app)
