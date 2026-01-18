@@ -1389,6 +1389,9 @@ async def admin_tasks_api(request):
     
     logger.info(f"admin_tasks_api: Access granted for user_id: {user_id}")
     
+    # Объявляем global в начале функции, до использования
+    global admin_tasks
+    
     if request.method == 'GET':
         return web.json_response(
             {'tasks': admin_tasks},
@@ -1431,7 +1434,6 @@ async def admin_tasks_api(request):
                     headers={'Access-Control-Allow-Origin': '*'}
                 )
             
-            global admin_tasks
             admin_tasks = [t for t in admin_tasks if t.get('id') != task_id]
             save_data()
             return web.json_response(
