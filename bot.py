@@ -268,8 +268,8 @@ def get_hatched_emoji_text(user_id):
     custom_emoji_id = user_custom_emoji.get(user_id)
     if custom_emoji_id:
         # Используем HTML формат для кастомного эмодзи
-        # Используем 🥚 как fallback текст
-        return f'<emoji id="{custom_emoji_id}">🥚</emoji>'
+        # Формат: <tg-emoji emoji-id="...">🥚</tg-emoji>
+        return f'<tg-emoji emoji-id="{custom_emoji_id}">🥚</tg-emoji>'
     else:
         return "🐣"
 
@@ -961,11 +961,10 @@ async def handle_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE
     message = update.message
     
     # Проверяем, есть ли в сообщении кастомные эмодзи
-    # В python-telegram-bot entity.type может быть строкой или константой
     if message.entities:
         for entity in message.entities:
-            # Проверяем наличие custom_emoji_id (это более надежный способ)
-            if hasattr(entity, 'custom_emoji_id') and entity.custom_emoji_id:
+            # Проверяем тип entity (как в рабочем коде aiogram)
+            if entity.type == 'custom_emoji' and hasattr(entity, 'custom_emoji_id') and entity.custom_emoji_id:
                 custom_emoji_id = entity.custom_emoji_id
                 # Сохраняем custom_emoji_id для пользователя
                 user_custom_emoji[user_id] = custom_emoji_id
