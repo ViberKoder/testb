@@ -971,7 +971,8 @@ async def handle_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE
                 save_data()
                 logger.info(f"User {user_id} sent custom emoji with ID: {custom_emoji_id}")
                 await update.message.reply_text(
-                    f"✅ Кастомный эмодзи сохранен! Теперь при вылуплении яиц будет использоваться этот эмодзи вместо 🐣"
+                    f"✅ Кастомный эмодзи сохранен! Теперь при вылуплении яиц будет использоваться этот эмодзи вместо 🐣\n\nID эмодзи: <code>{custom_emoji_id}</code>",
+                    parse_mode=ParseMode.HTML
                 )
                 return
     
