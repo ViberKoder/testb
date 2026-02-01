@@ -107,7 +107,8 @@ def load_data():
                     'ton_payments': data.get('ton_payments', {}),  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
                     'eggs_detail': data.get('eggs_detail', {}),  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
                     'multi_eggs': data.get('multi_eggs', {}),  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
-                    'admin_tasks': data.get('admin_tasks', [])  # [{id, name, avatar_url, channel, reward, created_at}]
+                    'admin_tasks': data.get('admin_tasks', []),  # [{id, name, avatar_url, channel, reward, created_at}]
+                    'user_custom_emoji': data.get('user_custom_emoji', {})  # {user_id: custom_emoji_id} - кастомные эмодзи пользователей
                 }
         except Exception as e:
             logger.error(f"Error loading data from {DATA_FILE}: {e}", exc_info=True)
@@ -132,7 +133,8 @@ def get_default_data():
         'ton_payments': {},
         'eggs_detail': {},
         'multi_eggs': {},
-        'admin_tasks': []
+        'admin_tasks': [],
+        'user_custom_emoji': {}
     }
 
 # Функция для сохранения данных в файл
@@ -152,7 +154,8 @@ def save_data():
             'ton_payments': ton_payments,
             'eggs_detail': eggs_detail,
             'multi_eggs': multi_eggs,
-            'admin_tasks': admin_tasks
+            'admin_tasks': admin_tasks,
+            'user_custom_emoji': user_custom_emoji
         }
         
         # Логируем что сохраняем
@@ -203,6 +206,7 @@ ton_payments = data.get('ton_payments', {})  # {user_id: [{'date': '2024-01-01',
 eggs_detail = data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
 multi_eggs = data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
 admin_tasks = data.get('admin_tasks', [])  # [{id, name, avatar_url, channel, reward, created_at}]
+user_custom_emoji = data.get('user_custom_emoji', {})  # {user_id: custom_emoji_id} - кастомные эмодзи пользователей
 
 # Логируем загруженные данные при старте
 logger.info(f"Bot started with data: {len(egg_points)} users with points, {len(referrers)} referrers, {len(eggs_detail)} eggs in detail")
@@ -258,6 +262,15 @@ def add_paid_eggs(user_id, amount):
         daily_eggs_sent[user_id] = {'date': today, 'count': 0, 'paid_eggs': old_paid_eggs + amount}
     else:
         daily_eggs_sent[user_id]['paid_eggs'] = user_data.get('paid_eggs', 0) + amount
+
+def get_hatched_emoji_text(user_id):
+    """Возвращает текст с кастомным эмодзи или дефолтный 🐣"""
+    custom_emoji_id = user_custom_emoji.get(user_id)
+    if custom_emoji_id:
+        # Используем HTML формат для кастомного эмодзи
+        return f'<emoji id="{custom_emoji_id}">🐣</emoji>'
+    else:
+        return "🐣"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -790,9 +803,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Attempting to send personal message to user {clicker_id} after hatching multi egg {egg_key} ({hatched_count}/{max_hatches})")
             
             # Пытаемся отправить сообщение
+            hatched_text = get_hatched_emoji_text(sender_id)
             sent_message = await context.bot.send_message(
                 chat_id=clicker_id,
-                text="🐣",
+                text=hatched_text,
+                parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
                 reply_markup=ls_keyboard,
                 disable_notification=False
             )
@@ -825,7 +840,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_reply_markup(reply_markup=keyboard)
                 logger.info(f"Multi egg {egg_key} updated: {hatched_count}/{max_hatches} hatched, {remaining} remaining")
             else:
-                # Если лимит достигнут, меняем эмодзи на 🐣 и добавляем кнопки
+                # Если лимит достигнут, меняем эмодзи на кастомный или 🐣 и добавляем кнопки
                 # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
                 referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
                 keyboard = InlineKeyboardMarkup([
@@ -840,9 +855,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
                     ]
                 ])
-                # Меняем эмодзи с 🥚 на 🐣
+                # Меняем эмодзи с 🥚 на кастомный или 🐣
+                hatched_text = get_hatched_emoji_text(sender_id)
                 await query.edit_message_text(
-                    "🐣",
+                    hatched_text,
+                    parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
                     reply_markup=keyboard
                 )
                 logger.info(f"Multi egg {egg_key} completed ({hatched_count}/{max_hatches}), changed emoji to 🐣 with buttons")
@@ -870,7 +887,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             )
                         ]
                     ])
-                    await query.edit_message_reply_markup(reply_markup=keyboard)
+                    # Обновляем текст с кастомным эмодзи
+                    hatched_text = get_hatched_emoji_text(sender_id)
+                    await query.edit_message_text(
+                        hatched_text,
+                        parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
+                        reply_markup=keyboard
+                    )
             except Exception as e2:
                 logger.error(f"Error updating multi egg reply_markup: {e2}", exc_info=True)
     else:
@@ -895,10 +918,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
         
-        # Меняем 🥚 на 🐣 и добавляем кнопки
+        # Меняем 🥚 на кастомный эмодзи или 🐣 и добавляем кнопки
         try:
             await query.edit_message_text(
-                "🐣",
+                hatched_text,
+                parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
                 reply_markup=keyboard
             )
             logger.info(f"Successfully updated egg message to 🐣 with buttons for egg {egg_key}")
@@ -908,17 +932,49 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_reply_markup(reply_markup=keyboard)
                 logger.info(f"Updated reply_markup only for egg {egg_key}")
-            except Exception as e2:
-                logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
-                # Если и это не работает, пробуем отредактировать только текст
-                try:
-                    await query.edit_message_text("🐣")
-                    # Затем добавляем кнопки отдельно
-                    await query.edit_message_reply_markup(reply_markup=keyboard)
-                except Exception as e3:
-                    logger.error(f"Error editing message text and reply_markup: {e3}", exc_info=True)
-                    # Если и это не работает, просто отвечаем
-                    await query.answer("🐣 Egg hatched!", show_alert=False)
+                except Exception as e2:
+                    logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
+                    # Если и это не работает, пробуем отредактировать только текст
+                    try:
+                        hatched_text = get_hatched_emoji_text(sender_id)
+                        await query.edit_message_text(
+                            hatched_text,
+                            parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None
+                        )
+                        # Затем добавляем кнопки отдельно
+                        await query.edit_message_reply_markup(reply_markup=keyboard)
+                    except Exception as e3:
+                        logger.error(f"Error editing message text and reply_markup: {e3}", exc_info=True)
+                        # Если и это не работает, просто отвечаем
+                        await query.answer("🐣 Egg hatched!", show_alert=False)
+
+
+async def handle_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик для получения кастомных эмодзи от пользователя"""
+    if not update.message:
+        return
+    
+    user_id = update.message.from_user.id
+    message = update.message
+    
+    # Проверяем, есть ли в сообщении кастомные эмодзи
+    # В python-telegram-bot entity.type может быть строкой или константой
+    if message.entities:
+        for entity in message.entities:
+            # Проверяем наличие custom_emoji_id (это более надежный способ)
+            if hasattr(entity, 'custom_emoji_id') and entity.custom_emoji_id:
+                custom_emoji_id = entity.custom_emoji_id
+                # Сохраняем custom_emoji_id для пользователя
+                user_custom_emoji[user_id] = custom_emoji_id
+                save_data()
+                logger.info(f"User {user_id} sent custom emoji with ID: {custom_emoji_id}")
+                await update.message.reply_text(
+                    f"✅ Кастомный эмодзи сохранен! Теперь при вылуплении яиц будет использоваться этот эмодзи вместо 🐣"
+                )
+                return
+    
+    # Если это не кастомный эмодзи, игнорируем
+    return
 
 
 async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1618,6 +1674,9 @@ def main():
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(ChatMemberHandler(chat_member_handler, ChatMemberHandler.CHAT_MEMBER))
+    # Обработчик для получения кастомных эмодзи
+    # Используем фильтр для всех текстовых сообщений, проверка custom emoji внутри
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_custom_emoji))
     
     # Запускаем веб-сервер для API в отдельном потоке
     def run_api_server():
