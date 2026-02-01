@@ -787,13 +787,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             # Создаем кнопки для ЛС сообщения
-            # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
-            referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
             ls_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "📱 Hatch App",
-                        url=referral_url
+                        "🍗Cook",
+                        url="https://t.me/cookcm"
                     ),
                     InlineKeyboardButton(
                         "Send 🥚",
@@ -843,13 +841,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Multi egg {egg_key} updated: {hatched_count}/{max_hatches} hatched, {remaining} remaining")
             else:
                 # Если лимит достигнут, меняем эмодзи на кастомный или 🐣 и добавляем кнопки
-                # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
-                referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
                 keyboard = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton(
-                            "📱 Hatch App",
-                            url=referral_url
+                            "🍗Cook",
+                            url="https://t.me/cookcm"
                         ),
                         InlineKeyboardButton(
                             "Send 🥚",
@@ -876,12 +872,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ])
                     await query.edit_message_reply_markup(reply_markup=keyboard)
                 else:
-                    referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
                     keyboard = InlineKeyboardMarkup([
                         [
                             InlineKeyboardButton(
-                                "📱 Hatch App",
-                                url=referral_url
+                                "🍗Cook",
+                                url="https://t.me/cookcm"
                             ),
                             InlineKeyboardButton(
                                 "Send 🥚",
@@ -904,14 +899,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"Egg {egg_id} hatched by {clicker_id} (sent by {sender_id})")
         
-        # Создаем кнопки для открытия mini app и отправки еще одного яйца
-        # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
-        referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
+        # Создаем кнопки для открытия канала Cook и отправки еще одного яйца
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    "📱 Hatch App",
-                    url=referral_url
+                    "🍗Cook",
+                    url="https://t.me/cookcm"
                 ),
                 InlineKeyboardButton(
                     "Send 🥚",
