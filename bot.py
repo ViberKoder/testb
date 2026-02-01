@@ -932,21 +932,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_reply_markup(reply_markup=keyboard)
                 logger.info(f"Updated reply_markup only for egg {egg_key}")
-                except Exception as e2:
-                    logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
-                    # Если и это не работает, пробуем отредактировать только текст
-                    try:
-                        hatched_text = get_hatched_emoji_text(sender_id)
-                        await query.edit_message_text(
-                            hatched_text,
-                            parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None
-                        )
-                        # Затем добавляем кнопки отдельно
-                        await query.edit_message_reply_markup(reply_markup=keyboard)
-                    except Exception as e3:
-                        logger.error(f"Error editing message text and reply_markup: {e3}", exc_info=True)
-                        # Если и это не работает, просто отвечаем
-                        await query.answer("🐣 Egg hatched!", show_alert=False)
+            except Exception as e2:
+                logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
+                # Если и это не работает, пробуем отредактировать только текст
+                try:
+                    hatched_text = get_hatched_emoji_text(sender_id)
+                    await query.edit_message_text(
+                        hatched_text,
+                        parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None
+                    )
+                    # Затем добавляем кнопки отдельно
+                    await query.edit_message_reply_markup(reply_markup=keyboard)
+                except Exception as e3:
+                    logger.error(f"Error editing message text and reply_markup: {e3}", exc_info=True)
+                    # Если и это не работает, просто отвечаем
+                    await query.answer("🐣 Egg hatched!", show_alert=False)
 
 
 async def handle_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
