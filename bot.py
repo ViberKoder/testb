@@ -6,8 +6,7 @@ from telegram import (
     InlineKeyboardButton, 
     InlineKeyboardMarkup, 
     Update,
-    WebAppInfo,
-    MessageEntity
+    WebAppInfo
 )
 from telegram.ext import Application, CommandHandler, InlineQueryHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler, MessageHandler, filters
 from telegram.constants import ChatMemberStatus
@@ -269,21 +268,11 @@ def get_hatched_emoji_text(user_id):
     custom_emoji_id = user_custom_emoji.get(user_id)
     if custom_emoji_id:
         # Используем HTML формат для кастомного эмодзи
-        # Используем пробел как fallback текст для правильного отображения анимации
-        return f'<emoji id="{custom_emoji_id}"> </emoji>'
+        # Используем 🥚 как fallback текст
+        return f'<emoji id="{custom_emoji_id}">🥚</emoji>'
     else:
         return "🐣"
 
-def get_hatched_emoji_entities(user_id):
-    """Возвращает entities для кастомного эмодзи или None"""
-    custom_emoji_id = user_custom_emoji.get(user_id)
-    if custom_emoji_id:
-        # Создаем MessageEntity для кастомного эмодзи
-        # Используем пробел как текст, чтобы эмодзи отображался
-        # В python-telegram-bot тип может быть строкой "custom_emoji" или константой
-        return [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-    else:
-        return None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -816,26 +805,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Attempting to send personal message to user {clicker_id} after hatching multi egg {egg_key} ({hatched_count}/{max_hatches})")
             
             # Пытаемся отправить сообщение
-            custom_emoji_id = user_custom_emoji.get(sender_id)
-            if custom_emoji_id:
-                # Используем entities для кастомного эмодзи
-                hatched_text = " "  # Пробел для кастомного эмодзи
-                entities = [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-                sent_message = await context.bot.send_message(
-                    chat_id=clicker_id,
-                    text=hatched_text,
-                    entities=entities,
-                    reply_markup=ls_keyboard,
-                    disable_notification=False
-                )
-            else:
-                # Используем обычный эмодзи
-                sent_message = await context.bot.send_message(
-                    chat_id=clicker_id,
-                    text="🐣",
-                    reply_markup=ls_keyboard,
-                    disable_notification=False
-                )
+            hatched_text = get_hatched_emoji_text(sender_id)
+            sent_message = await context.bot.send_message(
+                chat_id=clicker_id,
+                text=hatched_text,
+                parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
+                reply_markup=ls_keyboard,
+                disable_notification=False
+            )
             
             if sent_message:
                 logger.info(f"Successfully sent personal message to user {clicker_id} (message_id: {sent_message.message_id})")
@@ -881,22 +858,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ]
                 ])
                 # Меняем эмодзи с 🥚 на кастомный или 🐣
-                custom_emoji_id = user_custom_emoji.get(sender_id)
-                if custom_emoji_id:
-                    # Используем entities для кастомного эмодзи
-                    hatched_text = " "  # Пробел для кастомного эмодзи
-                    entities = [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-                    await query.edit_message_text(
-                        hatched_text,
-                        entities=entities,
-                        reply_markup=keyboard
-                    )
-                else:
-                    # Используем обычный эмодзи
-                    await query.edit_message_text(
-                        "🐣",
-                        reply_markup=keyboard
-                    )
+                hatched_text = get_hatched_emoji_text(sender_id)
+                await query.edit_message_text(
+                    hatched_text,
+                    parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
+                    reply_markup=keyboard
+                )
                 logger.info(f"Multi egg {egg_key} completed ({hatched_count}/{max_hatches}), changed emoji to 🐣 with buttons")
         except Exception as e:
             logger.error(f"Error updating multi egg message: {e}", exc_info=True)
@@ -923,22 +890,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         ]
                     ])
                     # Обновляем текст с кастомным эмодзи
-                    custom_emoji_id = user_custom_emoji.get(sender_id)
-                    if custom_emoji_id:
-                        # Используем entities для кастомного эмодзи
-                        hatched_text = " "  # Пробел для кастомного эмодзи
-                        entities = [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-                        await query.edit_message_text(
-                            hatched_text,
-                            entities=entities,
-                            reply_markup=keyboard
-                        )
-                    else:
-                        # Используем обычный эмодзи
-                        await query.edit_message_text(
-                            "🐣",
-                            reply_markup=keyboard
-                        )
+                    hatched_text = get_hatched_emoji_text(sender_id)
+                    await query.edit_message_text(
+                        hatched_text,
+                        parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
+                        reply_markup=keyboard
+                    )
             except Exception as e2:
                 logger.error(f"Error updating multi egg reply_markup: {e2}", exc_info=True)
     else:
@@ -965,22 +922,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Меняем 🥚 на кастомный эмодзи или 🐣 и добавляем кнопки
         try:
-            custom_emoji_id = user_custom_emoji.get(sender_id)
-            if custom_emoji_id:
-                # Используем entities для кастомного эмодзи
-                hatched_text = " "  # Пробел для кастомного эмодзи
-                entities = [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-                await query.edit_message_text(
-                    hatched_text,
-                    entities=entities,
-                    reply_markup=keyboard
-                )
-            else:
-                # Используем обычный эмодзи
-                await query.edit_message_text(
-                    "🐣",
-                    reply_markup=keyboard
-                )
+            hatched_text = get_hatched_emoji_text(sender_id)
+            await query.edit_message_text(
+                hatched_text,
+                parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None,
+                reply_markup=keyboard
+            )
             logger.info(f"Successfully updated egg message to 🐣 with buttons for egg {egg_key}")
         except Exception as e:
             logger.error(f"Error editing message: {e}", exc_info=True)
@@ -992,18 +939,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
                 # Если и это не работает, пробуем отредактировать только текст
                 try:
-                    custom_emoji_id = user_custom_emoji.get(sender_id)
-                    if custom_emoji_id:
-                        # Используем entities для кастомного эмодзи
-                        hatched_text = " "  # Пробел для кастомного эмодзи
-                        entities = [MessageEntity(type="custom_emoji", offset=0, length=1, custom_emoji_id=custom_emoji_id)]
-                        await query.edit_message_text(
-                            hatched_text,
-                            entities=entities
-                        )
-                    else:
-                        # Используем обычный эмодзи
-                        await query.edit_message_text("🐣")
+                    hatched_text = get_hatched_emoji_text(sender_id)
+                    await query.edit_message_text(
+                        hatched_text,
+                        parse_mode=ParseMode.HTML if user_custom_emoji.get(sender_id) else None
+                    )
                     # Затем добавляем кнопки отдельно
                     await query.edit_message_reply_markup(reply_markup=keyboard)
                 except Exception as e3:
